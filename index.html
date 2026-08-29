@@ -15,18 +15,9 @@
     font-display: swap;
   }
 
-  /* Extra selectable fonts — load from ./fount/ alongside this HTML file
-     when deploying (e.g. on GitHub Pages). If a file is missing, the
-     browser just falls back to the default Nanofon/Moby Monospace font. */
-  @font-face{ font-family:'Moby Bold'; src:url('./fount/Moby-Bold.ttf') format('truetype'); font-display:swap; }
-  @font-face{ font-family:'Hyperloop'; src:url('./fount/HYPERLOOP.otf') format('opentype'); font-display:swap; }
-  @font-face{ font-family:'Vultron Bold'; src:url('./fount/Vultron Bold.otf') format('opentype'); font-display:swap; }
-  @font-face{ font-family:'Wicked Mouse'; src:url('./fount/Wicked Mouse.otf') format('opentype'); font-display:swap; }
-  @font-face{ font-family:'Whimsy'; src:url('./fount/Whimsy.ttf') format('truetype'); font-display:swap; }
-  @font-face{ font-family:'Los Santos'; src:url('./fount/Los Santos.ttf') format('truetype'); font-display:swap; }
-  @font-face{ font-family:'WesternGrit'; src:url('./fount/WesternGrit-Regular.ttf') format('truetype'); font-display:swap; }
-  @font-face{ font-family:'BergenSans'; src:url('./fount/BergenSans-Regular.otf') format('opentype'); font-display:swap; }
-  @font-face{ font-family:'Poppins'; src:url('./fount/Poppins-Regular.ttf') format('truetype'); font-display:swap; }
+  /* Extra selectable fonts now load dynamically from the FONT_LIBRARY list
+     near the top of the script below — see that comment for how to add
+     a new one. */
 
   :root{
     --bg-void: #05070a;
@@ -808,18 +799,7 @@
 
     <div class="field">
       <label for="fontSelect">Font</label>
-      <select id="fontSelect">
-        <option value="Nanofon" selected>LED Pixel (default)</option>
-        <option value="Moby Bold">Moby Bold</option>
-        <option value="Hyperloop">Hyperloop</option>
-        <option value="Vultron Bold">Vultron Bold</option>
-        <option value="Wicked Mouse">Wicked Mouse</option>
-        <option value="Whimsy">Whimsy Script</option>
-        <option value="Los Santos">Los Santos</option>
-        <option value="WesternGrit">Western Grit</option>
-        <option value="BergenSans">BergenSans</option>
-        <option value="Poppins">Poppins</option>
-      </select>
+      <select id="fontSelect"></select>
     </div>
 
     <div class="field">
@@ -896,6 +876,26 @@
 
 <script>
 (function(){
+  // ---- Font library ---------------------------------------------------
+  // To add a font after uploading it to your ./fount/ folder on GitHub,
+  // just add one line here — nothing else in this file needs to change.
+  //   { value: 'Display Name', file: 'exact-filename.ttf' }
+  // "value" is what shows in the dropdown and is used as the font-family
+  // name internally. The built-in default (no file needed) is listed
+  // first as builtin:true.
+  const FONT_LIBRARY = [
+    { value: 'Nanofon', label: 'LED Pixel (default)', builtin: true },
+    { value: 'Moby Bold', file: 'Moby-Bold.ttf' },
+    { value: 'Hyperloop', file: 'HYPERLOOP.otf' },
+    { value: 'Vultron Bold', file: 'Vultron Bold.otf' },
+    { value: 'Wicked Mouse', file: 'Wicked Mouse.otf' },
+    { value: 'Whimsy', label: 'Whimsy Script', file: 'Whimsy.ttf' },
+    { value: 'Los Santos', file: 'Los Santos.ttf' },
+    { value: 'WesternGrit', label: 'Western Grit', file: 'WesternGrit-Regular.ttf' },
+    { value: 'BergenSans', file: 'BergenSans-Regular.otf' },
+    { value: 'Poppins', file: 'Poppins-Regular.ttf' }
+  ];
+
   const msgInput = document.getElementById('msgInput');
   const fontSelect = document.getElementById('fontSelect');
   const signLines = document.getElementById('signLines');
@@ -933,6 +933,29 @@
 
   function applyFont(){
     document.documentElement.style.setProperty('--sign-font', "'" + state.font + "'");
+  }
+
+  function initFontLibrary(){
+    FONT_LIBRARY.forEach(entry=>{
+      const opt = document.createElement('option');
+      opt.value = entry.value;
+      opt.textContent = entry.label || entry.value;
+      if(entry.builtin) opt.selected = true;
+      fontSelect.appendChild(opt);
+
+      if(entry.file && 'FontFace' in window){
+        const url = './fount/' + entry.file.split('/').map(encodeURIComponent).join('/');
+        const face = new FontFace(entry.value, `url('${url}')`);
+        face.load().then(loaded=>{
+          document.fonts.add(loaded);
+        }).catch(()=>{
+          // File missing or failed to parse — mark it in the dropdown
+          // instead of silently pretending it works.
+          opt.textContent = (entry.label || entry.value) + ' (file not found)';
+          opt.disabled = true;
+        });
+      }
+    });
   }
 
   function hexToRgb(hex){
@@ -1334,6 +1357,7 @@
   });
 
   applyColor();
+  initFontLibrary();
   applyFont();
   render();
   syncWheelFromColor(state.color);
