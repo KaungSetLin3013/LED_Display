@@ -766,8 +766,408 @@
     .wheel-wrap{ width:140px; height:140px; margin:0 auto; }
   }
 </style>
+<style id="dynamic-island-css">
+/* =====================================================================
+   DYNAMIC ISLAND
+   A floating pill that shows live status of the sign (mode / color / font /
+   speed / glow / PNG export) and expands into quick controls on tap.
+   Everything is namespaced .isl-* / .island so it can't clash with the page.
+   ===================================================================== */
+
+/* make room for the pill so it never covers the header */
+.wrap{ padding-top: calc(62px + env(safe-area-inset-top, 0px)); }
+
+.isl-anchor{
+  /* real damped spring (ζ≈0.6). Older browsers fall back to a bezier overshoot */
+  --spring: cubic-bezier(.3,1.35,.5,1);
+  --ease-out: cubic-bezier(.2,.8,.2,1);
+  --compact-w: 136px;  --compact-h: 36px;
+  --toast-w: min(calc(100vw - 80px), 264px);  --toast-h: 58px;
+  --open-w: min(calc(100vw - 24px), 360px);
+
+  position: fixed;
+  z-index: 10000;                       /* above everything except it hides itself in full screen */
+  top: calc(10px + env(safe-area-inset-top, 0px));
+  left: 0; right: 0;
+  display: flex;
+  justify-content: center;
+  pointer-events: none;                 /* only the island itself is clickable */
+  transition: opacity .3s ease, visibility 0s;
+}
+@supports (transition-timing-function: linear(0, 1)){
+  .isl-anchor{ --spring: linear(0, 0.0523, 0.1796, 0.3437, 0.5161, 0.677, 0.8146, 0.9234, 1.0026, 1.0545, 1.0834, 1.0943, 1.0922, 1.0818, 1.067, 1.0506, 1.0349, 1.0211, 1.01, 1.0017, 0.996, 0.9927, 0.9912, 0.9911, 0.9919, 0.9932, 0.9947, 0.9963, 0.9976, 0.9988, 0.9996, 1.0002, 1.0006, 1.0008, 1.0009, 1.0008, 1.0007, 1.0005, 1.0004, 1.0003, 1.0001, 1.0001, 1, 0.9999, 1); }
+}
+body.isl-hidden .isl-anchor{
+  opacity: 0; visibility: hidden;
+  transition: opacity .2s ease, visibility 0s linear .2s;
+}
+
+/* ---- the island: size/shape are driven by data-state ---- */
+.island{
+  --w: var(--compact-w);
+  --h: var(--compact-h);
+  --r: 18px;
+  --sat-x: 0px;
+  --sat-s: .3;
+  position: relative;
+  width: var(--w);
+  height: var(--h);
+  border-radius: var(--r);
+  pointer-events: auto;
+  font-family: var(--mono);
+  color: var(--text-chrome);
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    width .9s var(--spring),
+    height .9s var(--spring),
+    border-radius .6s var(--ease-out),
+    scale .3s var(--ease-out);
+}
+.island[data-state="toast"]{ --w: var(--toast-w); --h: var(--toast-h); --r: 29px; }
+.island[data-state="open"]{  --w: var(--open-w);  --h: var(--open-h, 204px); --r: 32px; }
+.island[data-sat="on"]{      --sat-x: calc(var(--toast-w) / 2 + 24px); --sat-s: 1; }
+
+@media (hover:hover){
+  .island[data-state="idle"]:hover{ scale: 1.06; }
+}
+.island[data-state="idle"]:active{ scale: .96; }
+
+.island.nudge{ animation: isl-nudge .45s var(--ease-out); }
+@keyframes isl-nudge{
+  0%   { transform: scale(1); }
+  35%  { transform: scale(1.07, .93); }
+  70%  { transform: scale(.985, 1.03); }
+  100% { transform: scale(1); }
+}
+
+/* ---- gooey layer: body + satellite blob merge like a metaball ---- */
+.isl-goo{
+  position: absolute;
+  inset: -60px -110px;
+  border-radius: inherit;
+  filter: url(#isl-goo);
+  pointer-events: none;
+  z-index: 1;
+}
+.isl-body{
+  position: absolute;
+  inset: 60px 110px;
+  background: #000;
+  border-radius: inherit;
+}
+.isl-sat{
+  position: absolute;
+  left: 50%; top: 50%;
+  width: 30px; height: 30px;
+  margin: -15px 0 0 -15px;
+  border-radius: 50%;
+  background: #000;
+  transform: translateX(var(--sat-x)) scale(var(--sat-s));
+  transition: transform .8s var(--spring) .06s;
+}
+.island:not([data-sat="on"]) .isl-sat{ transition-delay: 0s; }
+
+/* the colored dot that rides on top of the black satellite blob */
+.isl-sat-dot{
+  position: absolute;
+  left: 50%; top: 50%;
+  width: 20px; height: 20px;
+  margin: -10px 0 0 -10px;
+  border-radius: 50%;
+  background: var(--sat-c, var(--led));
+  box-shadow: 0 0 12px var(--sat-c, var(--led));
+  transform: translateX(var(--sat-x)) scale(var(--sat-s));
+  opacity: 0;
+  pointer-events: none;
+  z-index: 4;
+  transition: transform .8s var(--spring) .06s, opacity .12s ease, background-color .15s linear, box-shadow .15s linear;
+}
+.island[data-sat="on"] .isl-sat-dot{ opacity: 1; transition-delay: .06s, .2s, 0s, 0s; }
+
+/* soft LED glow behind the pill + hairline edge */
+.isl-glow{
+  position: absolute;
+  inset: 3px 10px;
+  border-radius: inherit;
+  background: var(--led);
+  filter: blur(16px);
+  opacity: .10;
+  transition: opacity .5s ease;
+  pointer-events: none;
+}
+.island[data-state="toast"] .isl-glow{ opacity: .30; }
+.island[data-state="open"]  .isl-glow{ opacity: .18; }
+.isl-ring{
+  position: absolute; inset: 0;
+  border-radius: inherit;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.09), inset 0 1px 0 rgba(255,255,255,.07);
+  pointer-events: none;
+  z-index: 2;
+}
+
+/* ---- content layers (cross-fade with a little blur, like iOS) ---- */
+.isl-clip{
+  position: absolute; inset: 0;
+  border-radius: inherit;
+  overflow: hidden;
+  z-index: 3;
+}
+.isl-layer{
+  position: absolute;
+  top: 0; left: 50%;
+  translate: -50% 0;
+  opacity: 0;
+  visibility: hidden;
+  filter: blur(6px);
+  scale: .88;
+  pointer-events: none;
+  transition: opacity .16s ease, filter .16s ease, scale .2s ease, visibility 0s linear .18s;
+}
+.island[data-state="idle"]  .isl-compact,
+.island[data-state="toast"] .isl-toast,
+.island[data-state="open"]  .isl-open{
+  opacity: 1;
+  visibility: visible;
+  filter: blur(0);
+  scale: 1;
+  transition: opacity .3s ease .12s, filter .3s ease .12s, scale .5s var(--spring) .08s, visibility 0s;
+}
+.island[data-state="open"] .isl-open{ pointer-events: auto; }
+
+/* compact */
+.isl-compact{
+  width: var(--compact-w); height: var(--compact-h);
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  font-size: 10px; letter-spacing: 2px; text-transform: uppercase;
+  color: var(--text-chrome);
+  white-space: nowrap;
+}
+.isl-dot{
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--led);
+  box-shadow: 0 0 8px 2px var(--led-glow);
+  animation: isl-breathe 2.4s ease-in-out infinite;
+}
+@keyframes isl-breathe{ 0%,100%{ opacity: 1; } 50%{ opacity: .35; } }
+
+/* toast */
+.isl-toast{
+  width: var(--toast-w); height: var(--toast-h);
+  display: flex; align-items: center; gap: 12px;
+  padding: 0 20px 0 18px;
+}
+.isl-slot{ flex: none; width: 28px; height: 28px; display: grid; place-items: center; }
+.isl-text{ flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.isl-label{ font-size: 9px; letter-spacing: 2px; text-transform: uppercase; color: var(--text-chrome-dim); }
+.isl-value{
+  font-size: 14px; letter-spacing: .5px; color: #e8fbfa;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  text-shadow: 0 0 10px var(--led-glow);
+}
+.isl-pct{ flex: none; display: none; font-size: 12px; color: var(--led); font-variant-numeric: tabular-nums; }
+.isl-toast.has-bar .isl-pct{ display: block; }
+.isl-bar{
+  position: absolute; left: 18px; right: 18px; bottom: 7px; height: 3px;
+  border-radius: 3px; background: rgba(255,255,255,.1);
+  opacity: 0; transition: opacity .2s ease;
+}
+.isl-bar i{
+  display: block; height: 100%; width: 0; border-radius: inherit;
+  background: var(--led); box-shadow: 0 0 8px var(--led-glow);
+  transition: width .12s linear;
+}
+.isl-toast.has-bar .isl-bar{ opacity: 1; }
+.isl-toast.swap .isl-slot,
+.isl-toast.swap .isl-text{ animation: isl-swap .35s var(--ease-out); }
+@keyframes isl-swap{
+  from{ opacity: 0; filter: blur(5px); transform: translateY(4px); }
+  to  { opacity: 1; filter: blur(0);   transform: none; }
+}
+
+/* toast icons */
+.isl-wheel{
+  width: 22px; height: 22px; border-radius: 50%;
+  background: conic-gradient(#ff3b3b, #ffb000, #39ff6a, #2dfdf5, #5b6bff, #ff3bd4, #ff3b3b);
+  box-shadow: 0 0 10px rgba(255,255,255,.14);
+}
+.isl-orb{
+  width: 20px; height: 20px; border-radius: 50%;
+  background: var(--led);
+  box-shadow: 0 0 var(--orb, 12px) var(--led-glow);
+}
+.isl-glyph{ font-size: 20px; line-height: 1; color: var(--led); text-shadow: 0 0 10px var(--led-glow); }
+.isl-check{
+  width: 22px; height: 22px; fill: none; stroke: var(--led);
+  stroke-width: 2.6; stroke-linecap: round; stroke-linejoin: round;
+  filter: drop-shadow(0 0 4px var(--led-glow));
+}
+.isl-check path{ stroke-dasharray: 24; stroke-dashoffset: 24; animation: isl-draw .45s .1s ease forwards; }
+@keyframes isl-draw{ to{ stroke-dashoffset: 0; } }
+
+/* 5x3 LED matrix icon, animated per sign mode */
+.isl-matrix{
+  --spd: 1.6s;
+  display: grid; grid-template-columns: repeat(5, 4px); grid-auto-rows: 4px; gap: 2px;
+}
+.isl-matrix i{
+  width: 4px; height: 4px; border-radius: 50%;
+  background: var(--led); box-shadow: 0 0 5px var(--led-glow);
+}
+.isl-matrix i:nth-child(5n+1){ --c: 0; }
+.isl-matrix i:nth-child(5n+2){ --c: 1; }
+.isl-matrix i:nth-child(5n+3){ --c: 2; }
+.isl-matrix i:nth-child(5n+4){ --c: 3; }
+.isl-matrix i:nth-child(5n+5){ --c: 4; }
+.isl-matrix[data-mode="scroll"] i{     animation: isl-col  var(--spd) linear infinite; animation-delay: calc(var(--spd) * var(--c) * -0.18); }
+.isl-matrix[data-mode="blink"] i{      animation: isl-blink 1s steps(1, end) infinite; }
+.isl-matrix[data-mode="pulse"] i{      animation: isl-pulse 1.8s ease-in-out infinite; }
+.isl-matrix[data-mode="flicker"] i{    animation: isl-flick 1.4s linear infinite; animation-delay: calc(var(--c) * -.31s); }
+.isl-matrix[data-mode="typewriter"] i{ animation: isl-type 2.4s steps(1, end) infinite; animation-delay: calc(var(--c) * .22s); }
+.isl-matrix[data-mode="neon"] i{       animation: isl-pulse 2.2s ease-in-out infinite; }
+.isl-matrix[data-mode="neon"] i:nth-child(n+7):nth-child(-n+9){ opacity: .08; box-shadow: none; animation: none; }
+@keyframes isl-col  { 0%,100%{ opacity: .14; } 25%,45%{ opacity: 1; } }
+@keyframes isl-blink{ 0%,49%{ opacity: 1; } 50%,100%{ opacity: .1; } }
+@keyframes isl-pulse{ 0%,100%{ opacity: 1; } 50%{ opacity: .25; } }
+@keyframes isl-flick{ 0%{opacity:1} 4%{opacity:.2} 8%{opacity:1} 20%{opacity:.9} 22%{opacity:.3} 24%{opacity:1} 60%{opacity:.95} 62%{opacity:.15} 64%{opacity:.9} 100%{opacity:1} }
+@keyframes isl-type { 0%{ opacity: 0; } 1%,85%{ opacity: 1; } 100%{ opacity: 0; } }
+
+/* ---- expanded panel ---- */
+.isl-open{
+  width: var(--open-w);
+  padding: 14px;
+  display: flex; flex-direction: column; gap: 10px;
+  touch-action: none;
+}
+.isl-preview{
+  position: relative; flex: none; height: 54px;
+  border-radius: 14px; overflow: hidden;
+  background: #04070a;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.06), inset 0 0 24px rgba(0,0,0,.9);
+}
+.isl-preview::after{               /* LED-dot texture over the preview */
+  content: ''; position: absolute; inset: 0; pointer-events: none;
+  background-image: radial-gradient(rgba(0,0,0,.7) 1.1px, transparent 1.4px);
+  background-size: 4px 4px;
+}
+.isl-pv-track{
+  position: absolute; inset: 0; padding: 0 12px;
+  display: flex; align-items: center; justify-content: center; justify-content: safe center;
+  overflow: hidden;
+}
+.isl-preview-text{
+  display: block; white-space: pre;
+  font-family: var(--sign-font, 'Nanofon'), 'Nanofon', var(--mono);
+  font-size: 26px; line-height: 1;
+  color: var(--led);
+  text-shadow: 0 0 8px var(--led-glow), 0 0 20px var(--led-glow);
+}
+.isl-preview-text[data-mode="scroll"]{
+  position: absolute; left: 0; top: 50%; margin-top: -13px;
+  animation: isl-marq 7s linear infinite;
+}
+.isl-preview-text[data-mode="blink"]{      animation: isl-blink 1s steps(1, end) infinite; }
+.isl-preview-text[data-mode="pulse"]{      animation: isl-tpulse 1.8s ease-in-out infinite; }
+.isl-preview-text[data-mode="flicker"]{    animation: isl-flick 1.6s linear infinite; }
+.isl-preview-text[data-mode="typewriter"]{ animation: isl-tw 3s steps(var(--pv-n, 11), end) infinite; }
+.isl-preview-text[data-mode="neon"]{
+  color: #fff;
+  text-shadow: 0 0 5px var(--led), 0 0 12px var(--led), 0 0 28px var(--led);
+  animation: isl-tpulse 2.4s ease-in-out infinite;
+}
+@keyframes isl-marq  { from{ transform: translateX(var(--pv-cw, 340px)); } to{ transform: translateX(-100%); } }
+@keyframes isl-tpulse{ 0%,100%{ opacity: 1; } 50%{ opacity: .45; } }
+@keyframes isl-tw    { 0%{ clip-path: inset(0 100% 0 0); } 70%,100%{ clip-path: inset(0 0 0 0); } }
+
+.isl-chips{ display: flex; flex-wrap: wrap; gap: 6px; }
+.isl-chip, .isl-btn{
+  font: inherit; font-size: 10px; letter-spacing: 1.4px; text-transform: uppercase;
+  color: var(--text-chrome); cursor: pointer;
+  border: 1px solid rgba(255,255,255,.1);
+  background: rgba(255,255,255,.04);
+  transition: background .2s ease, border-color .2s ease, color .2s ease, box-shadow .2s ease;
+}
+.isl-chip{ padding: 6px 10px; border-radius: 999px; }
+.isl-chip:hover, .isl-btn:hover{ background: rgba(255,255,255,.09); color: #fff; }
+.isl-chip.is-active{
+  color: var(--led); border-color: var(--led);
+  background: rgba(255,255,255,.06); box-shadow: 0 0 12px var(--led-glow);
+}
+.isl-actions{ display: flex; gap: 8px; }
+.isl-btn{ flex: 1; height: 34px; border-radius: 999px; letter-spacing: 1.6px; }
+.isl-btn.primary{ color: var(--led); border-color: var(--led); }
+.isl-chip:focus-visible, .isl-btn:focus-visible, .isl-hit:focus-visible{ outline: 2px solid var(--led); outline-offset: 2px; }
+
+/* the tap target (compact + toast); disabled while the panel is open */
+.isl-hit{
+  position: absolute; inset: -3px; z-index: 6;
+  padding: 0; border: 0; background: transparent;
+  border-radius: inherit; cursor: pointer;
+  -webkit-appearance: none; appearance: none;
+}
+.island[data-state="open"] .isl-hit{ pointer-events: none; }
+
+.isl-sr{
+  position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
+
+@media (prefers-reduced-motion: reduce){
+  .island{ transition-duration: .01ms !important; }
+  .isl-sat, .isl-sat-dot{ transition-duration: .01ms !important; transition-delay: 0s !important; }
+  .isl-layer{ filter: none; scale: 1; transition-duration: .15s !important; transition-delay: 0s !important; }
+  .island.nudge{ animation: none; }
+  .isl-dot, .isl-matrix i, .isl-preview-text{ animation: none !important; }
+}
+</style>
 </head>
 <body>
+
+<!-- ===== Dynamic Island ===== -->
+<div class="isl-anchor" id="islAnchor">
+  <div class="island" id="island" data-state="idle" data-kind="" data-sat="off" role="group" aria-label="Sign status and quick controls">
+    <div class="isl-goo" aria-hidden="true"><i class="isl-body"></i><i class="isl-sat"></i></div>
+    <div class="isl-glow" aria-hidden="true"></div>
+    <div class="isl-ring" aria-hidden="true"></div>
+
+    <div class="isl-clip">
+      <div class="isl-layer isl-compact" aria-hidden="true">
+        <span class="isl-dot"></span><span id="islMini">Static</span>
+      </div>
+
+      <div class="isl-layer isl-toast" id="islToast" aria-hidden="true">
+        <div class="isl-slot" id="islSlot"></div>
+        <div class="isl-text"><span class="isl-label" id="islLabel"></span><span class="isl-value" id="islValue"></span></div>
+        <span class="isl-pct" id="islPct"></span>
+        <div class="isl-bar"><i id="islBarFill"></i></div>
+      </div>
+
+      <div class="isl-layer isl-open" id="islOpen" inert>
+        <div class="isl-preview" id="islPreview">
+          <div class="isl-pv-track"><span class="isl-preview-text" id="islPreviewText" data-mode="static"></span></div>
+        </div>
+        <div class="isl-chips" id="islChips" role="group" aria-label="Display mode"></div>
+        <div class="isl-actions">
+          <button type="button" class="isl-btn" id="islFull">&#x26F6; Full screen</button>
+          <button type="button" class="isl-btn primary" id="islPng">Download PNG</button>
+        </div>
+      </div>
+    </div>
+
+    <i class="isl-sat-dot" aria-hidden="true"></i>
+    <button type="button" class="isl-hit" id="islHit" aria-expanded="false" aria-controls="islOpen" aria-label="Sign status. Open quick controls"></button>
+  </div>
+</div>
+<div class="isl-sr" id="islLive" role="status" aria-live="polite"></div>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <defs>
+    <filter id="isl-goo" x="-20%" y="-50%" width="140%" height="200%" color-interpolation-filters="sRGB">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="6" result="blur"/>
+      <feColorMatrix in="blur" mode="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 18 -7"/>
+    </filter>
+  </defs>
+</svg>
+<!-- ===== /Dynamic Island ===== -->
+
 
 <div class="wrap">
 
@@ -1383,6 +1783,272 @@
   applyFont();
   render();
   syncWheelFromColor(state.color);
+})();
+</script>
+
+<script>
+/* ===== Dynamic Island behaviour =====
+   Listens to the existing controls (no changes to the sign code above) and
+   animates the island in response. */
+(function(){
+  'use strict';
+  var $ = function(id){ return document.getElementById(id); };
+  var root = document.documentElement;
+  var island = $('island');
+  if(!island) return;
+
+  var hit = $('islHit'), mini = $('islMini'), toastEl = $('islToast'), slot = $('islSlot'),
+      label = $('islLabel'), value = $('islValue'), pct = $('islPct'), barFill = $('islBarFill'),
+      openEl = $('islOpen'), preview = $('islPreview'), pvText = $('islPreviewText'),
+      chips = $('islChips'), live = $('islLive');
+  var msgInput = $('msgInput'), modeSeg = $('modeSeg'), fontSelect = $('fontSelect'),
+      speedRange = $('speedRange'), glowRange = $('glowRange'), downloadBtn = $('downloadBtn'),
+      fullscreenBtn = $('fullscreenBtn'), fsOverlay = $('fsOverlay');
+  var reduce = window.matchMedia('(prefers-reduced-motion: reduce)');
+
+  var state = 'idle', timer = null;
+
+  /* ---------- helpers ---------- */
+  function modeBtn(mode){ return modeSeg.querySelector('button[data-mode="' + mode + '"]'); }
+  function currentMode(){ var b = modeSeg.querySelector('button.active'); return b ? b.dataset.mode : 'static'; }
+  function modeName(mode){ var b = modeBtn(mode); return b ? b.textContent.trim() : mode; }
+  function ledColor(){
+    return (root.style.getPropertyValue('--led') || getComputedStyle(root).getPropertyValue('--led')).trim();
+  }
+  function retrigger(el, cls){ el.classList.remove(cls); void el.offsetWidth; el.classList.add(cls); }
+  function nudge(){ retrigger(island, 'nudge'); }
+  island.addEventListener('animationend', function(e){ if(e.target === island) island.classList.remove('nudge'); });
+  function setState(s){ state = s; island.dataset.state = s; }
+
+  function matrix(mode, spd){
+    var h = '<span class="isl-matrix" data-mode="' + mode + '"' + (spd ? ' style="--spd:' + spd + 's"' : '') + '>';
+    for(var i = 0; i < 15; i++) h += '<i></i>';
+    return h + '</span>';
+  }
+
+  /* ---------- toast content ---------- */
+  function fill(o){
+    switch(o.slot){
+      case 'matrix': slot.innerHTML = matrix(o.mode || 'static', o.spd); break;
+      case 'wheel':  slot.innerHTML = '<span class="isl-wheel"></span>'; break;
+      case 'orb':
+        slot.innerHTML = '<span class="isl-orb"></span>';
+        slot.firstChild.style.setProperty('--orb', (o.orb || 12) + 'px');
+        break;
+      case 'glyph':
+        slot.innerHTML = '<span class="isl-glyph">Aa</span>';
+        slot.firstChild.style.fontFamily = "'" + o.family + "', 'Nanofon', monospace";
+        break;
+      case 'check':
+        slot.innerHTML = '<svg class="isl-check" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
+        break;
+      default: slot.textContent = '';
+    }
+    label.textContent = o.label || '';
+    value.textContent = o.value || '';
+    pct.textContent = o.pct || '';
+    if(o.bar && o.fill != null){
+      barFill.style.transition = 'width .12s linear';
+      barFill.style.width = (o.fill * 100) + '%';
+    }
+  }
+
+  function showToast(kind, o){
+    if(state === 'open'){ refreshOpen(); return; }
+    var same = (state === 'toast' && island.dataset.kind === kind);
+    fill(o);
+    island.dataset.kind = kind;
+    island.dataset.sat = o.sat ? 'on' : 'off';
+    if(o.sat) island.style.setProperty('--sat-c', o.hex);
+    toastEl.classList.toggle('has-bar', !!o.bar);
+    // discrete changes (mode/font) get the swap + squish every time; continuous
+    // ones (sliders, color drag) only when the kind of toast actually changes
+    var discrete = (kind === 'mode' || kind === 'font');
+    if(state === 'toast' && (!same || discrete)){ retrigger(toastEl, 'swap'); nudge(); }
+    setState('toast');
+    if(o.say) live.textContent = o.say;
+    clearTimeout(timer);
+    if(!o.manual) timer = setTimeout(collapse, o.hold || 2200);
+  }
+
+  function collapse(){
+    if(state !== 'toast') return;
+    island.dataset.sat = 'off';
+    setState('idle');
+  }
+
+  /* ---------- expanded panel ---------- */
+  function buildChips(){
+    chips.textContent = '';
+    modeSeg.querySelectorAll('button[data-mode]').forEach(function(src){
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'isl-chip';
+      b.dataset.mode = src.dataset.mode;
+      b.textContent = src.textContent.trim();
+      chips.appendChild(b);
+    });
+  }
+
+  function refreshOpen(){
+    var mode = currentMode();
+    var txt = (msgInput.value.split('\n')[0] || '').trim() || ' ';
+    pvText.textContent = txt;
+    pvText.dataset.mode = mode;
+    island.style.setProperty('--pv-n', Math.max(1, txt.length));
+    chips.querySelectorAll('button').forEach(function(b){
+      var on = b.dataset.mode === mode;
+      b.classList.toggle('is-active', on);
+      b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+  }
+
+  function measureOpen(){
+    var h = openEl.offsetHeight;                       // laid out even while hidden
+    if(h) island.style.setProperty('--open-h', h + 'px');
+    if(preview.clientWidth) island.style.setProperty('--pv-cw', preview.clientWidth + 'px');
+  }
+
+  function open(){
+    clearTimeout(timer);
+    refreshOpen();
+    measureOpen();
+    island.dataset.sat = 'off';
+    setState('open');
+    openEl.removeAttribute('inert');
+    hit.setAttribute('aria-expanded', 'true');
+    setTimeout(function(){
+      if(state !== 'open') return;
+      var a = chips.querySelector('.is-active') || chips.firstElementChild;
+      if(a) a.focus({ preventScroll: true });
+    }, 380);
+  }
+
+  function close(returnFocus){
+    if(state !== 'open') return;
+    setState('idle');
+    openEl.setAttribute('inert', '');
+    hit.setAttribute('aria-expanded', 'false');
+    if(returnFocus) hit.focus({ preventScroll: true });
+  }
+
+  hit.addEventListener('click', function(){ if(state === 'open') close(true); else open(); });
+  chips.addEventListener('click', function(e){
+    var b = e.target.closest('button[data-mode]');
+    var src = b && modeBtn(b.dataset.mode);
+    if(src) src.click();                               // reuse the page's own mode logic
+  });
+  $('islFull').addEventListener('click', function(){ close(); fullscreenBtn.click(); });
+  $('islPng').addEventListener('click',  function(){ close(); downloadBtn.click(); });
+
+  document.addEventListener('pointerdown', function(e){
+    if(state === 'open' && !island.contains(e.target)) close();
+  }, true);
+  document.addEventListener('keydown', function(e){
+    if(e.key === 'Escape' && state === 'open') close(true);
+  });
+  // swipe up on the open panel to dismiss
+  var swipeY = null;
+  openEl.addEventListener('pointerdown', function(e){ swipeY = e.clientY; });
+  openEl.addEventListener('pointermove', function(e){
+    if(swipeY !== null && swipeY - e.clientY > 28){ swipeY = null; close(); }
+  });
+  ['pointerup', 'pointercancel', 'pointerleave'].forEach(function(t){
+    openEl.addEventListener(t, function(){ swipeY = null; });
+  });
+  window.addEventListener('resize', function(){ if(state === 'open') measureOpen(); });
+
+  /* ---------- wire up the sign's controls ---------- */
+  // mode
+  function onMode(mode){
+    var name = modeName(mode);
+    mini.textContent = name;
+    hit.setAttribute('aria-label', 'Sign status: ' + name + '. Open quick controls');
+    if(state === 'open'){ refreshOpen(); return; }
+    showToast('mode', { slot: 'matrix', mode: mode, label: 'Mode', value: name, say: 'Mode ' + name });
+  }
+  modeSeg.addEventListener('click', function(e){
+    var b = e.target.closest('button[data-mode]');
+    if(b) onMode(b.dataset.mode);
+  });
+
+  // color: swatches, custom picker, wheel and hex box all end up writing --led
+  var lastLed = ledColor(), ledRaf = 0;
+  new MutationObserver(function(){
+    if(ledRaf) return;
+    ledRaf = requestAnimationFrame(function(){
+      ledRaf = 0;
+      var c = ledColor();
+      if(!c || c === lastLed) return;
+      lastLed = c;
+      if(state === 'open'){ refreshOpen(); return; }
+      showToast('color', { slot: 'wheel', label: 'Color', value: c.toUpperCase(), sat: true, hex: c, hold: 1900, say: 'Color ' + c });
+    });
+  }).observe(root, { attributes: true, attributeFilter: ['style'] });
+
+  // font
+  fontSelect.addEventListener('change', function(){
+    var opt = fontSelect.selectedOptions[0];
+    var name = opt ? opt.textContent.replace(/\s*\(.*?\)\s*$/, '') : fontSelect.value;
+    if(state === 'open'){ refreshOpen(); return; }
+    showToast('font', { slot: 'glyph', family: fontSelect.value, label: 'Font', value: name, say: 'Font ' + name });
+  });
+
+  // speed + glow behave like iOS volume: a fill bar that follows the slider
+  function ratio(input){ return (+input.value - +input.min) / (+input.max - +input.min); }
+  speedRange.addEventListener('input', function(){
+    var p = ratio(speedRange);
+    showToast('speed', { slot: 'matrix', mode: 'scroll', spd: (2.6 - p * 2.1).toFixed(2),
+      label: 'Speed', value: String(speedRange.value), pct: Math.round(p * 100) + '%', bar: true, fill: p, hold: 1100 });
+  });
+  glowRange.addEventListener('input', function(){
+    var p = ratio(glowRange);
+    showToast('glow', { slot: 'orb', orb: Math.round(4 + p * 22),
+      label: 'Glow', value: glowRange.value + '%', pct: Math.round(p * 100) + '%', bar: true, fill: p, hold: 1100 });
+  });
+
+  // typing gives the island a little squish
+  msgInput.addEventListener('input', function(){
+    if(state === 'idle') nudge();
+    else if(state === 'open') refreshOpen();
+  });
+
+  // PNG export: progress -> check mark
+  downloadBtn.addEventListener('click', function(){
+    showToast('png', { slot: 'matrix', mode: 'scroll', spd: '0.55', label: 'PNG', value: 'Rendering\u2026',
+      bar: true, fill: 0, manual: true, say: 'Rendering PNG' });
+    barFill.style.transition = 'none';
+    barFill.style.width = '0%';
+    void barFill.offsetWidth;
+    barFill.style.transition = 'width .6s cubic-bezier(.3,.7,.2,1)';
+    barFill.style.width = '100%';
+    clearTimeout(timer);
+    timer = setTimeout(function(){
+      if(state !== 'toast' || island.dataset.kind !== 'png') return;
+      fill({ slot: 'check', label: 'PNG exported', value: 'nanofon-sign.png' });
+      toastEl.classList.remove('has-bar');
+      retrigger(toastEl, 'swap');
+      live.textContent = 'PNG exported';
+      timer = setTimeout(collapse, 2000);
+    }, 680);
+  });
+
+  // hide the island while the sign is in full screen
+  new MutationObserver(function(){
+    var on = fsOverlay.classList.contains('active');
+    document.body.classList.toggle('isl-hidden', on);
+    if(on){ clearTimeout(timer); close(); if(state === 'toast') setState('idle'); }
+  }).observe(fsOverlay, { attributes: true, attributeFilter: ['class'] });
+
+  /* ---------- init ---------- */
+  buildChips();
+  mini.textContent = modeName(currentMode());
+  hit.setAttribute('aria-label', 'Sign status: ' + mini.textContent + '. Open quick controls');
+  setTimeout(function(){
+    if(!reduce.matches && state === 'idle'){
+      showToast('boot', { slot: 'matrix', mode: 'scroll', spd: '1.4', label: 'Unit 07', value: 'On air', hold: 1700 });
+    }
+  }, 700);
 })();
 </script>
 
