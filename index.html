@@ -793,6 +793,24 @@
     .fs-overlay.active .fs-exit,
     .fs-overlay.active .fs-hint{ display: none; }
   }
+
+  /* ---- PC full screen: no rotation; the sign fills the whole screen ----
+     Works for a normal landscape monitor and for a monitor turned vertical
+     (portrait): text stays upright and the sign stretches to the full height. */
+  .fs-overlay.active.pc-mode .fs-rotor .bezel{
+    width: 100%;
+    height: 100%;
+    padding: 2vmin;
+    border-radius: 0;
+  }
+  .fs-overlay.active.pc-mode .fs-rotor .glass{
+    height: 100%;
+    padding: 4vmin;
+    border-radius: 1vmin;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
 </style>
 </head>
 <body>
@@ -1340,18 +1358,16 @@
   });
 
   function updateOrientationClass(){
-    // If the device is already physically in landscape (e.g. Android
-    // granted a real orientation lock, or the user manually rotated with
-    // auto-rotate on), don't also apply the CSS rotation on top of it.
-    // Only trust "landscape" on touch devices. On a PC the monitor is always
-    // landscape, but we still want the sign turned vertical (rotated 90°).
-    // (Touch-screen laptops report a touch pointer too, so detect a real
-    // phone/tablet instead of relying on pointer type.)
+    // Phones/tablets: if already physically landscape, don't add the CSS
+    // rotation on top; held upright, rotate the sign 90° (the old behaviour).
+    // PCs: never rotate. Works on a vertical (portrait) monitor too, because
+    // the sign simply fills whatever screen it is on, text upright.
     const ua = navigator.userAgent || '';
     const isPhoneOrTablet = /Android|iPhone|iPad|iPod|Mobile/i.test(ua) ||
       (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);   // iPadOS
     const isLandscape = window.matchMedia('(orientation: landscape)').matches;
-    fsOverlay.classList.toggle('landscape-native', isLandscape && isPhoneOrTablet);
+    fsOverlay.classList.toggle('landscape-native', !isPhoneOrTablet || isLandscape);
+    fsOverlay.classList.toggle('pc-mode', !isPhoneOrTablet);
   }
 
   function enterFullscreen(){
