@@ -13,7 +13,7 @@
 <style>
   @font-face {
     font-family: 'Nanofon';
-    /* >>> KEEP YOUR EXISTING src LINE HERE (the long base64 one) <<< */
+    /* >>> REPLACE THIS WHOLE src LINE WITH YOUR EXISTING BASE64 src LINE <<< */
     src: url('data:font/ttf;base64,PASTE_YOUR_EXISTING_BASE64_FONT_DATA_HERE') format('truetype');
     font-display: swap;
   }
@@ -330,6 +330,7 @@
     border-bottom: 1px solid rgba(255,255,255,0.05);
   }
   .field:last-child{ border-bottom:none; }
+  .field[hidden], .opt-group[hidden]{ display:none; }
   .field label{
     font-size: 10px;
     letter-spacing: 2px;
@@ -550,6 +551,39 @@
     box-shadow: 0 0 0 1px rgba(45,253,245,0.3) inset;
   }
 
+  /* ---- Source options (clock / weather / countdown) ---- */
+  .opt-group{ display:flex; flex-wrap:wrap; align-items:center; gap:10px; }
+  .opt-group + .opt-group{ margin-top:10px; }
+  input.txt, input.dt{
+    background: var(--panel-metal-lo);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: var(--radius-sm);
+    color: #d7f5f4;
+    font-family: var(--mono);
+    font-size: 13px;
+    padding: 9px 10px;
+    outline: none;
+    min-width: 0;
+    flex: 1 1 140px;
+    color-scheme: dark;
+  }
+  input.txt:focus, input.dt:focus{ border-color: var(--led); box-shadow: 0 0 0 1px var(--led-glow); }
+  .mini-btn{
+    background: transparent;
+    border: 1px solid rgba(45,253,245,0.4);
+    color: var(--led);
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    padding: 9px 12px;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+  }
+  .mini-btn:hover{ background: rgba(45,253,245,0.08); }
+  .check{ display:flex; align-items:center; gap:6px; cursor:pointer; }
+  .check input{ accent-color: var(--led); }
+
   input[type="range"]{
     -webkit-appearance:none;
     width:100%;
@@ -581,6 +615,7 @@
     justify-content:flex-end;
     margin-top: 18px;
     gap: 10px;
+    flex-wrap: wrap;
   }
   button.dl{
     background: transparent;
@@ -611,7 +646,6 @@
     touch-action: manipulation;
   }
 
-  .actions{ flex-wrap: wrap; }
   button.fullscreen-btn{
     background: transparent;
     border: 1px solid rgba(45,253,245,0.4);
@@ -829,6 +863,12 @@
     align-items: center;
     justify-content: center;
   }
+
+  /* ---- Full screen border (keep LAST so it overrides the rules above) ---- */
+  .fs-overlay.active .fs-rotor .glass{
+    border: 0.8vmin solid var(--led);
+    box-shadow: 0 0 2.5vmin var(--led-glow), inset 0 0 2.5vmin var(--led-glow);
+  }
 </style>
 </head>
 <body>
@@ -865,6 +905,45 @@
     <div class="field">
       <label for="msgInput">Message</label>
       <input type="text" id="msgInput" maxlength="60" spellcheck="false" autocomplete="off" value="HELLO WORLD">
+    </div>
+
+    <div class="field">
+      <label>Source</label>
+      <div class="segmented" id="sourceSeg">
+        <button data-source="text" class="active">Text</button>
+        <button data-source="clock">Clock</button>
+        <button data-source="date">Date</button>
+        <button data-source="weather">Weather</button>
+        <button data-source="countdown">Countdown</button>
+      </div>
+    </div>
+
+    <div class="field" id="optionsField" hidden>
+      <label>Options</label>
+      <div>
+        <div class="opt-group" data-for="clock" hidden>
+          <div class="segmented" id="hourSeg">
+            <button data-h="24" class="active">24H</button>
+            <button data-h="12">12H</button>
+          </div>
+          <label class="check"><input type="checkbox" id="secToggle" checked> Seconds</label>
+        </div>
+
+        <div class="opt-group" data-for="weather" hidden>
+          <input type="text" class="txt" id="cityInput" value="Tokyo" placeholder="City" spellcheck="false" autocomplete="off">
+          <button type="button" class="mini-btn" id="cityGo">Go</button>
+          <button type="button" class="mini-btn" id="geoBtn">My location</button>
+          <div class="segmented" id="unitSeg">
+            <button data-u="C" class="active">°C</button>
+            <button data-u="F">°F</button>
+          </div>
+        </div>
+
+        <div class="opt-group" data-for="countdown" hidden>
+          <input type="text" class="txt" id="cdLabel" value="NEW YEAR" maxlength="20" placeholder="Label" spellcheck="false" autocomplete="off">
+          <input type="datetime-local" class="dt" id="cdTarget">
+        </div>
+      </div>
     </div>
 
     <div class="field">
@@ -1008,7 +1087,6 @@
   const fsBigger = document.getElementById('fsBigger');
   const fsClose = document.getElementById('fsClose');
   const glass = document.querySelector('.sign-stage .glass');
-  const marqueeTrack = document.querySelector('.sign-stage .marquee-track');
   const wheelToggle = document.getElementById('wheelToggle');
   const wheelClose = document.getElementById('wheelClose');
   const colorWheelPanel = document.getElementById('colorWheelPanel');
@@ -1018,12 +1096,28 @@
   const hexInput = document.getElementById('hexInput');
   const wheelCtx = colorWheel.getContext('2d');
 
+  // Live source controls
+  const sourceSeg = document.getElementById('sourceSeg');
+  const optionsField = document.getElementById('optionsField');
+  const hourSeg = document.getElementById('hourSeg');
+  const secToggle = document.getElementById('secToggle');
+  const cityInput = document.getElementById('cityInput');
+  const cityGo = document.getElementById('cityGo');
+  const geoBtn = document.getElementById('geoBtn');
+  const unitSeg = document.getElementById('unitSeg');
+  const cdLabel = document.getElementById('cdLabel');
+  const cdTarget = document.getElementById('cdTarget');
+
   let state = {
     color: '#2dfdf5',
     mode: 'static',
     speed: 14,
     glow: 55,
-    font: 'Nanofon'
+    font: 'Nanofon',
+    source: 'text',
+    clock24: true,
+    showSeconds: true,
+    units: 'C'
   };
 
   function applyFont(){
@@ -1225,6 +1319,118 @@
     bezel.style.boxShadow = `0 1px 0 rgba(255,255,255,0.06) inset, 0 -2px 6px rgba(0,0,0,0.6) inset, 0 18px 40px rgba(0,0,0,0.55), 0 0 ${40+glowA*70}px rgba(${r},${g},${b},${bezelGlow.toFixed(2)})`;
   }
 
+  // ---- Live sources: clock / date / weather / countdown ----
+  const DAYS = ['SUN','MON','TUE','WED','THU','FRI','SAT'];
+  const MONTHS = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+  const pad = n => String(n).padStart(2,'0');
+
+  function weatherWord(c){
+    if(c === 0) return 'CLEAR';
+    if(c === 1) return 'MOSTLY CLEAR';
+    if(c === 2) return 'PARTLY CLOUDY';
+    if(c === 3) return 'CLOUDY';
+    if(c === 45 || c === 48) return 'FOG';
+    if(c >= 51 && c <= 55) return 'DRIZZLE';
+    if(c === 56 || c === 57) return 'FREEZING DRIZZLE';
+    if(c === 61 || c === 63) return 'RAIN';
+    if(c === 65) return 'HEAVY RAIN';
+    if(c === 66 || c === 67) return 'FREEZING RAIN';
+    if(c === 71 || c === 73) return 'SNOW';
+    if(c === 75 || c === 77) return 'HEAVY SNOW';
+    if(c >= 80 && c <= 82) return 'SHOWERS';
+    if(c === 85 || c === 86) return 'SNOW SHOWERS';
+    if(c === 95) return 'THUNDERSTORM';
+    if(c === 96 || c === 99) return 'HAIL STORM';
+    return 'WEATHER';
+  }
+
+  let weatherPlace = null;           // { lat, lon, name }
+  let weatherLines = ['LOADING...'];
+
+  async function geocode(name){
+    const r = await fetch('https://geocoding-api.open-meteo.com/v1/search?count=1&name=' + encodeURIComponent(name));
+    const j = await r.json();
+    if(!j.results || !j.results.length) throw new Error('city not found');
+    const p = j.results[0];
+    return { lat: p.latitude, lon: p.longitude, name: p.name };
+  }
+
+  async function loadWeather(){
+    try{
+      if(!weatherPlace) weatherPlace = await geocode(cityInput.value.trim() || 'Tokyo');
+      const unit = state.units === 'F' ? '&temperature_unit=fahrenheit' : '';
+      const url = 'https://api.open-meteo.com/v1/forecast?latitude=' + weatherPlace.lat +
+                  '&longitude=' + weatherPlace.lon + '&current=temperature_2m,weather_code' + unit;
+      const r = await fetch(url);
+      const j = await r.json();
+      const t = Math.round(j.current.temperature_2m);
+      weatherLines = [
+        weatherPlace.name.toUpperCase(),
+        t + '°' + state.units,
+        weatherWord(j.current.weather_code)
+      ];
+    } catch(err){
+      weatherLines = ['WEATHER', 'UNAVAILABLE'];
+      weatherPlace = null;   // retry the lookup next time
+    }
+    updateLive();
+  }
+
+  function countdownLines(){
+    const label = (cdLabel.value.trim() || 'COUNTDOWN').toUpperCase();
+    if(!cdTarget.value) return [label, 'SET A DATE'];
+    const diff = new Date(cdTarget.value).getTime() - Date.now();
+    if(diff <= 0) return [label, 'TIME UP'];
+    const s = Math.floor(diff / 1000);
+    const d = Math.floor(s / 86400);
+    const h = Math.floor((s % 86400) / 3600);
+    const m = Math.floor((s % 3600) / 60);
+    const sec = s % 60;
+    return [label, (d > 0 ? d + 'D ' : '') + pad(h) + ':' + pad(m) + ':' + pad(sec)];
+  }
+
+  function getLines(){
+    const now = new Date();
+    switch(state.source){
+      case 'clock': {
+        let h = now.getHours(), suffix = '';
+        if(!state.clock24){ suffix = h >= 12 ? ' PM' : ' AM'; h = h % 12 || 12; }
+        const hh = state.clock24 ? pad(h) : String(h);
+        const t = hh + ':' + pad(now.getMinutes()) + (state.showSeconds ? ':' + pad(now.getSeconds()) : '');
+        return [t + suffix];
+      }
+      case 'date':
+        return [DAYS[now.getDay()], MONTHS[now.getMonth()] + ' ' + now.getDate()];
+      case 'weather':
+        return weatherLines;
+      case 'countdown':
+        return countdownLines();
+      default:
+        return msgInput.value.split('\n').slice(0,4);
+    }
+  }
+
+  // Update text in place once per second so scroll/blink/etc. animations don't restart
+  function updateLive(){
+    if(state.source === 'text') return;
+    const lines = getLines();
+    const divs = signLines.children;
+    if(divs.length !== lines.length){ render(); return; }
+    lines.forEach((line, i) => {
+      const text = line.length ? line : '\u00a0';
+      const div = divs[i];
+      div.textContent = state.mode === 'scroll'
+        ? (text + '\u00a0\u00a0\u00a0\u00a0\u00a0').repeat(2)
+        : text;
+      if(state.mode === 'neon') div.dataset.text = text;
+      div.classList.toggle('empty', line.trim() === '');
+    });
+  }
+  setInterval(updateLive, 1000);
+  // Weather refreshes every 5 minutes while the Weather source is active
+  setInterval(()=>{ if(state.source === 'weather') loadWeather(); }, 5 * 60 * 1000);
+
+  // ---- Typewriter (Text source only) ----
   let typewriterTimer = null;
   function clearTypewriter(){
     if(typewriterTimer){
@@ -1277,7 +1483,7 @@
   }
 
   function render(){
-    const lines = msgInput.value.split('\n').slice(0,4);
+    const lines = getLines();
     clearTypewriter();
     signLines.innerHTML = '';
     signLines.classList.toggle('scrolling', state.mode==='scroll');
@@ -1287,7 +1493,7 @@
     signLines.classList.toggle('neon-mode', state.mode==='neon');
     glass.classList.toggle('neon-active', state.mode==='neon');
 
-    if(state.mode === 'typewriter'){
+    if(state.mode === 'typewriter' && state.source === 'text'){
       startTypewriter(lines);
     } else {
       lines.forEach(line=>{
@@ -1306,7 +1512,7 @@
       });
     }
 
-    const speedActive = state.mode === 'scroll' || state.mode === 'typewriter';
+    const speedActive = state.mode === 'scroll' || (state.mode === 'typewriter' && state.source === 'text');
     speedField.style.opacity = speedActive ? '1' : '0.35';
     speedRange.disabled = !speedActive;
   }
@@ -1348,7 +1554,7 @@
   });
 
   downloadBtn.addEventListener('click', ()=>{
-    const lines = msgInput.value.split('\n').slice(0,4).filter(l=>true);
+    const lines = getLines();
     const scale = 4;
     const fontSize = 42 * scale;
     const padX = 60*scale, padY = 40*scale;
@@ -1380,6 +1586,62 @@
     link.href = canvas.toDataURL('image/png');
     link.click();
   });
+
+  // ---- Source selector and options ----
+  function showOptions(){
+    let any = false;
+    optionsField.querySelectorAll('.opt-group').forEach(g => {
+      const on = g.dataset.for === state.source;
+      g.hidden = !on;
+      if(on) any = true;
+    });
+    optionsField.hidden = !any;
+    msgInput.closest('.field').style.opacity = state.source === 'text' ? '1' : '0.35';
+  }
+
+  sourceSeg.querySelectorAll('button').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      sourceSeg.querySelectorAll('button').forEach(b=>b.classList.remove('active'));
+      btn.classList.add('active');
+      state.source = btn.dataset.source;
+      showOptions();
+      if(state.source === 'weather') loadWeather();
+      render();
+    });
+  });
+
+  hourSeg.querySelectorAll('button').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      hourSeg.querySelectorAll('button').forEach(b=>b.classList.remove('active'));
+      btn.classList.add('active');
+      state.clock24 = btn.dataset.h === '24';
+      render();
+    });
+  });
+  secToggle.addEventListener('change', ()=>{ state.showSeconds = secToggle.checked; render(); });
+
+  unitSeg.querySelectorAll('button').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      unitSeg.querySelectorAll('button').forEach(b=>b.classList.remove('active'));
+      btn.classList.add('active');
+      state.units = btn.dataset.u;
+      loadWeather();
+    });
+  });
+  function searchCity(){ weatherPlace = null; weatherLines = ['LOADING...']; render(); loadWeather(); }
+  cityGo.addEventListener('click', searchCity);
+  cityInput.addEventListener('keydown', e=>{ if(e.key === 'Enter') searchCity(); });
+  geoBtn.addEventListener('click', ()=>{
+    if(!navigator.geolocation){ weatherLines = ['NO GPS']; render(); return; }
+    weatherLines = ['LOCATING...']; render();
+    navigator.geolocation.getCurrentPosition(
+      p => { weatherPlace = { lat: p.coords.latitude, lon: p.coords.longitude, name: 'My location' }; loadWeather(); },
+      () => { weatherLines = ['LOCATION', 'DENIED']; render(); }
+    );
+  });
+
+  cdLabel.addEventListener('input', render);
+  cdTarget.addEventListener('input', render);
 
   // ---- Full screen ----
   function updateOrientationClass(){
@@ -1488,9 +1750,16 @@
     if(!document.webkitFullscreenElement && fsOverlay.classList.contains('active')) exitFullscreen();
   });
 
+  // Default countdown target: 3 days from now (so it isn't empty on first use)
+  (function(){
+    const t = new Date(Date.now() + 3*864e5);
+    cdTarget.value = new Date(t - t.getTimezoneOffset()*6e4).toISOString().slice(0,16);
+  })();
+
   applyColor();
   initFontLibrary();
   applyFont();
+  showOptions();
   render();
   syncWheelFromColor(state.color);
 })();
