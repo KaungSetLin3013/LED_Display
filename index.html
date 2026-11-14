@@ -296,6 +296,20 @@ button,.swatch,.segmented button,input[type=range]{-webkit-tap-highlight-color:t
   .rsvg .spin,.rsvg .cell.hd,.brand .dot,.glass.neon-active::after,.sign-lines.neon-mode .sign-line:not(.empty)::before,.sign-lines.neon-mode .sign-line:not(.empty)::after,.color-wheel-panel,#optionsField .opt-group[data-for]{animation:none}
   button,.segmented button,.srcbar button::after,.chev{transition-duration:.01ms}
 }
+/* More full screen styles: radar, terminal, minimal */
+.fs-overlay.radar-on .rtile,.fs-overlay.radar-on .rsvg .cell{display:none}
+.rcenter{z-index:1}
+.reactor::after{content:'';position:absolute;inset:4%;border-radius:50%;pointer-events:none;opacity:0;background:conic-gradient(from 0deg,transparent 0 290deg,var(--led-glow) 360deg);animation:sweep 4s linear infinite}
+.fs-overlay.radar-on .reactor::after{opacity:.55}
+@keyframes sweep{to{transform:rotate(360deg)}}
+.fs-overlay.fs-terminal .fs-rotor .sign-lines{align-items:flex-start;margin:0;gap:1.5vmin}
+.fs-overlay.fs-terminal .fs-rotor .sign-line{font-size:calc(clamp(24px,9vmin,120px)*var(--fs-scale,1))}
+.fs-overlay.fs-terminal.active .fs-rotor .glass{justify-content:flex-start}
+.fs-overlay.fs-terminal .fs-hud b{font-size:2.4vmin;opacity:.9}
+.fs-overlay.fs-minimal .fs-hud,.fs-overlay.fs-minimal .fs-rotor .glass::before{display:none}
+.fs-overlay.fs-minimal .fs-rotor .bezel{background:none;box-shadow:none!important}
+.fs-overlay.fs-minimal.active .fs-rotor .glass{border:0;box-shadow:none;background:none}
+@media (prefers-reduced-motion:reduce){.reactor::after{animation:none}}
 </style>
 </head>
 <body>
@@ -423,7 +437,7 @@ button,.swatch,.segmented button,input[type=range]{-webkit-tap-highlight-color:t
         </div>
         <div class="sub">
           <div class="wheel-label" id="lblFsStyle">Full screen style</div>
-          <div class="segmented" id="styleSeg" role="group" aria-labelledby="lblFsStyle"><button type="button" data-style="reactor" class="active">Reactor</button><button type="button" data-style="sign">Classic</button></div>
+          <div class="segmented" id="styleSeg" role="group" aria-labelledby="lblFsStyle"><button type="button" data-style="reactor" class="active">Reactor</button><button type="button" data-style="radar">Radar</button><button type="button" data-style="terminal">Terminal</button><button type="button" data-style="minimal">Minimal</button><button type="button" data-style="sign">Classic</button></div>
         </div>
         <div class="sub"><button type="button" class="mini-btn" id="linkBtn">Copy display link</button></div>
         <p class="hint" id="wakeNote"></p>
@@ -936,18 +950,19 @@ button,.swatch,.segmented button,input[type=range]{-webkit-tap-highlight-color:t
     $('tCount').textContent=cdTarget.value?(new Date(cdTarget.value)>now?'D-'+Math.ceil((new Date(cdTarget.value)-now)/864e5):'DONE'):'--';
   }
   function applyFsStyle(){
-    const on=fsOverlay.classList.contains('active')&&state.fsStyle==='reactor';
-    fsOverlay.classList.toggle('reactor-on',on); reactor.hidden=!on;
+    const act=fsOverlay.classList.contains('active'), st=state.fsStyle, on=act&&(st==='reactor'||st==='radar');
+    fsOverlay.classList.toggle('reactor-on',on); reactor.hidden=!on; fsOverlay.classList.toggle('radar-on',act&&st==='radar'); fsOverlay.classList.toggle('fs-terminal',act&&st==='terminal'); fsOverlay.classList.toggle('fs-minimal',act&&st==='minimal'); hudTag.textContent='// '+state.source+' · '+state.mode;
     if(on) rcenter.appendChild(track); else if(track.parentNode!==glass) glass.appendChild(track);
     updateReactor();
   }
   setInterval(updateReactor,1000);
+  setInterval(()=>{ if(fsOverlay.classList.contains('fs-terminal')) hudTag.textContent='// '+state.source+' · '+state.mode+' · '+new Date().toTimeString().slice(0,8); },1000);
   styleSeg.querySelectorAll('button').forEach(btn=>btn.addEventListener('click',()=>{
     styleSeg.querySelectorAll('button').forEach(b=>b.classList.remove('active')); btn.classList.add('active');
     state.fsStyle=btn.dataset.style; applyFsStyle();
     if(state.fsStyle==='reactor'&&fsOverlay.classList.contains('active')&&!wxInfo) loadWeather();
   }));
-  $('fsStyleBtn').addEventListener('click',()=>pick(styleSeg,'style',state.fsStyle==='reactor'?'sign':'reactor'));
+  $('fsStyleBtn').addEventListener('click',()=>pick(styleSeg,'style',(o=>o[(o.indexOf(state.fsStyle)+1)%o.length])(['reactor','radar','terminal','minimal','sign'])));
   buildReactor();
 
   // ---- Save settings, URL parameters, display link ----
